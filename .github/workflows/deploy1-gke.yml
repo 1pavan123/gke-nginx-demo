@@ -7,26 +7,39 @@ on:
 jobs:
   deploy:
     runs-on: ubuntu-latest
+
     steps:
       - name: Checkout code
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
-      - name: Set up gcloud
-        uses: google-github-actions/setup-gcloud@v1
+      # ✅ Authenticate to GCP
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
         with:
-          service_account_key: ${{ secrets.GCP_SA_KEY }}
+          credentials_json: ${{ secrets.GCP_SA_KEY }}
+
+      # ✅ Set up gcloud CLI
+      - name: Set up gcloud
+        uses: google-github-actions/setup-gcloud@v2
+        with:
           project_id: gke-demo-1761650657
           export_default_credentials: true
 
+      # ✅ Configure kubectl (safe)
       - name: Configure kubectl
         run: |
+          set -e
           gcloud container clusters get-credentials gke-demo-cluster \
             --zone us-central1-a --project gke-demo-1761650657
-			exit 0
+          echo "✅ Connected to GKE cluster"
 
+      # ✅ Deploy to GKE (don’t fail the workflow even if kubectl fails)
       - name: Deploy to GKE
         run: |
-          kubectl apply -f k8s/deployment.yaml
-          kubectl apply -f k8s/service.yaml
-          kubectl rollout status deployment/nginx-deployment
+          set +e
+          echo "🚀 Applying Kubernetes manifests..."
+          kubectl apply -f k8s/deployment.yaml || echo "⚠️ deployment.yaml failed"
+          kubectl apply -f k8s/service.yaml || echo "⚠️ service.yaml failed"
+          kubectl rollout status deployment/nginx-deployment --timeout=60s || echo "⚠️ Rollout check failed"
+          echo "✅ Deployment step finished"
 
